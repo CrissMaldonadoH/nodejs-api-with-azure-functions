@@ -1,0 +1,16 @@
+{
+  "name": "solucion360backend",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"No tests yet...\""
+  },
+  "engines": {
+    "node": "20.12.2"
+  },
+  "dependencies": {
+    "joi": "^17.10.1",
+    "mssql": "^10.0.1"
+  }
+}

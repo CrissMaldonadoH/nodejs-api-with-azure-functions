@@ -1,0 +1,131 @@
+# Node.js Function App to Linux on Azure
+# Build a Node.js function app and deploy it to Azure as a Linux function app.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+
+trigger:
+  - main
+
+variables:
+  # Azure Resource Manager connection created during pipeline creation
+  azureSubscription: "509d9986-087a-4d8e-be61-6e8e66c9a0b8"
+
+  # Function app name
+  functionAppNameDev: "dev-ciudadania-360"
+  functionAppNameQa: "qa-ciudadania-360"
+  functionAppNameProduction: "ciudadania-360"
+
+  # Environment name
+  environmentNameDev: "dev-ciudadania-360"
+  environmentNameQa: "qa-ciudadania-360"
+  environmentProduction: "ciudadania-360"
+
+  # Agent VM image name
+  vmImageName: "ubuntu-latest"
+
+stages:
+  - stage: Build
+    displayName: Build stage
+    jobs:
+      - job: Build
+        displayName: Build
+        pool:
+          vmImage: $(vmImageName)
+
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: "10.x"
+            displayName: "Install Node.js"
+
+          - script: |
+              if [ -f extensions.csproj ]
+              then
+                  dotnet build extensions.csproj --runtime ubuntu.16.04-x64 --output ./bin
+              fi
+            displayName: "Build extensions"
+
+          - script: |
+              npm install
+              npm run build --if-present
+              npm run test --if-present
+            displayName: "Prepare binaries"
+
+          - task: ArchiveFiles@2
+            displayName: "Archive files"
+            inputs:
+              rootFolderOrFile: "$(System.DefaultWorkingDirectory)"
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+              replaceExistingArchive: true
+
+          - publish: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+            artifact: drop
+
+  - stage: Deploy
+    displayName: DEV
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: Deploy
+        displayName: Deploy
+        environment: $(environmentNameDev)
+        pool:
+          vmImage: $(vmImageName)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureFunctionApp@1
+                  displayName: "Azure Functions App Deploy: dev-ciudadania-360"
+                  inputs:
+                    azureSubscription: "$(azureSubscription)"
+                    appType: functionAppLinux
+                    appName: $(functionAppNameDev)
+                    package: "$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
+
+  - stage: QADeploy
+    displayName: QA
+    dependsOn: Deploy
+    condition: succeeded()
+    jobs:
+      - deployment: QADeploy
+        displayName: Deploy to QA
+        environment: $(environmentNameQa)
+        pool:
+          vmImage: $(vmImageName)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureFunctionApp@1
+                  displayName: "Azure Functions App Deploy: qa-ciudadania-360"
+                  inputs:
+                    azureSubscription: "$(azureSubscription)"
+                    appType: functionAppLinux
+                    appName: $(functionAppNameQA)
+                    package: "$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
+
+    # ... [The rest of your YAML file above remains unchanged]
+  - stage: ProductionDeploy
+    displayName: PROD
+    dependsOn: QADeploy
+    condition: succeeded()
+    jobs:
+      - deployment: ProductionDeploy
+        displayName: Deploy to Production
+        environment: $(environmentProduction)
+        pool:
+          vmImage: $(vmImageName)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureFunctionApp@1
+                  displayName: "Azure Functions App Deploy: ciudadania-360"
+                  inputs:
+                    azureSubscription: "$(azureSubscription)"
+                    appType: functionAppLinux
+                    appName: $(functionAppNameProduction)
+                    package: "$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
